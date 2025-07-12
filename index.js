@@ -52,23 +52,49 @@ class DraggableNode {
     let isDragging = false;
 
     const onDragMove = (event) => {
-      if (isDragging) {
-        const screenPoint = new Point(event.clientX, event.clientY);
-        const mouseWorldPos = this.canvas.worldContainer.toLocal(screenPoint);
+      if (!isDragging) return;
 
-        this.worldPosition.set(
-          mouseWorldPos.x - this.dragOffset.x,
-          mouseWorldPos.y - this.dragOffset.y
-        );
-        this.anchorMarker.position.copyFrom(this.worldPosition);
-      }
+      // Calculate the proposed new top-left corner in world coordinates
+      const mouseWorldPos = this.canvas.worldContainer.toLocal(
+        new Point(event.clientX, event.clientY)
+      );
+      const proposedWorldPos = new Point(
+        mouseWorldPos.x - this.dragOffset.x,
+        mouseWorldPos.y - this.dragOffset.y
+      );
+
+      // Convert this to screen coordinates to check against the canvas bounds
+      const proposedScreenPos =
+        this.canvas.worldContainer.toGlobal(proposedWorldPos);
+
+      // Get dimensions needed for clamping
+      const nodeWidth = this.domElement.clientWidth;
+      const nodeHeight = this.domElement.clientHeight;
+      const canvasBounds = this.canvas.app.screen;
+
+      // Clamp the screen position
+      const clampedScreenX = Math.max(
+        canvasBounds.x, // Left edge
+        Math.min(proposedScreenPos.x, canvasBounds.width - nodeWidth) // Right edge
+      );
+      const clampedScreenY = Math.max(
+        canvasBounds.y, // Top edge
+        Math.min(proposedScreenPos.y, canvasBounds.height - nodeHeight) // Bottom edge
+      );
+      const clampedScreenPoint = new Point(clampedScreenX, clampedScreenY);
+
+      // Convert the final clamped screen position back to world position
+      const finalWorldPos =
+        this.canvas.worldContainer.toLocal(clampedScreenPoint);
+
+      // Update the node's position with the corrected value
+      this.worldPosition.copyFrom(finalWorldPos);
+      this.anchorMarker.position.copyFrom(this.worldPosition);
     };
 
     const onDragEnd = () => {
       isDragging = false;
-      // Re-enable text selection on the page
       document.body.style.userSelect = "";
-
       window.removeEventListener("mousemove", onDragMove);
       window.removeEventListener("mouseup", onDragEnd);
     };
@@ -76,8 +102,6 @@ class DraggableNode {
     this.domElement.addEventListener("mousedown", (event) => {
       event.stopPropagation();
       isDragging = true;
-
-      // Disable text selection on the entire page to prevent highlighting
       document.body.style.userSelect = "none";
 
       const mouseScreenPos = new Point(event.clientX, event.clientY);
@@ -98,10 +122,8 @@ class DraggableNode {
    */
   update() {
     const screenPos = this.canvas.worldContainer.toGlobal(this.worldPosition);
-
     this.domElement.style.left = `${screenPos.x}px`;
     this.domElement.style.top = `${screenPos.y}px`;
-
     this.domElement.innerText = `World X: ${Math.round(
       this.worldPosition.x
     )}, Y: ${Math.round(this.worldPosition.y)}`;
@@ -133,6 +155,8 @@ class PannableCanvas {
   /** Initializes the pixi app and sets up all event listeners. */
   async init() {
     await this.app.init({ background: "#fff", resizeTo: window });
+    // await this.app.init({ background: "#fff", resizeTo: window });
+    this.app.canvas.style.border = "2px solid #333";
     this.domTarget.appendChild(this.app.canvas);
     this.app.stage.addChild(this.worldContainer);
 
