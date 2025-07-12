@@ -9,12 +9,6 @@ import {
  * Represents a single draggable DOM element linked to a position in the pixi world.
  */
 class DraggableNode {
-  /**
-   * @param {number} x - The initial X position in the world.
-   * @param {number} y - The initial Y position in the world.
-   * @param {string} text - The initial text content.
-   * @param {PannableCanvas} canvas - The parent canvas controller.
-   */
   constructor(x, y, text, canvas) {
     this.canvas = canvas;
     this.worldPosition = new Point(x, y);
@@ -36,7 +30,10 @@ class DraggableNode {
     this.domElement.style.fontFamily = "monospace";
     this.domElement.style.cursor = "move";
     this.domElement.style.zIndex = "1000";
-    document.body.appendChild(this.domElement);
+    // Allow this element to receive mouse events
+    this.domElement.style.pointerEvents = "auto";
+    // Append to the canvas's dedicated DOM container, not the body
+    this.canvas.domContainer.appendChild(this.domElement);
   }
 
   /** Creates the red anchor marker in the pixi world. */
@@ -47,47 +44,40 @@ class DraggableNode {
     this.canvas.worldContainer.addChild(this.anchorMarker);
   }
 
-  /** Attaches mousedown listener to handle dragging. */
   _attachEventListeners() {
     let isDragging = false;
 
     const onDragMove = (event) => {
       if (!isDragging) return;
 
-      // Calculate the proposed new top-left corner in world coordinates
       const mouseWorldPos = this.canvas.worldContainer.toLocal(
         new Point(event.clientX, event.clientY)
       );
+
       const proposedWorldPos = new Point(
         mouseWorldPos.x - this.dragOffset.x,
         mouseWorldPos.y - this.dragOffset.y
       );
 
-      // Convert this to screen coordinates to check against the canvas bounds
       const proposedScreenPos =
         this.canvas.worldContainer.toGlobal(proposedWorldPos);
-
-      // Get dimensions needed for clamping
       const nodeWidth = this.domElement.clientWidth;
       const nodeHeight = this.domElement.clientHeight;
       const canvasBounds = this.canvas.app.screen;
-
-      // Clamp the screen position
       const clampedScreenX = Math.max(
-        canvasBounds.x, // Left edge
-        Math.min(proposedScreenPos.x, canvasBounds.width - nodeWidth) // Right edge
+        canvasBounds.x,
+        Math.min(proposedScreenPos.x, canvasBounds.width - nodeWidth)
       );
+
       const clampedScreenY = Math.max(
-        canvasBounds.y, // Top edge
-        Math.min(proposedScreenPos.y, canvasBounds.height - nodeHeight) // Bottom edge
+        canvasBounds.y,
+        Math.min(proposedScreenPos.y, canvasBounds.height - nodeHeight)
       );
+
       const clampedScreenPoint = new Point(clampedScreenX, clampedScreenY);
 
-      // Convert the final clamped screen position back to world position
       const finalWorldPos =
         this.canvas.worldContainer.toLocal(clampedScreenPoint);
-
-      // Update the node's position with the corrected value
       this.worldPosition.copyFrom(finalWorldPos);
       this.anchorMarker.position.copyFrom(this.worldPosition);
     };
@@ -103,35 +93,32 @@ class DraggableNode {
       event.stopPropagation();
       isDragging = true;
       document.body.style.userSelect = "none";
-
       const mouseScreenPos = new Point(event.clientX, event.clientY);
       const mouseWorldPos = this.canvas.worldContainer.toLocal(mouseScreenPos);
-
       this.dragOffset.set(
         mouseWorldPos.x - this.worldPosition.x,
         mouseWorldPos.y - this.worldPosition.y
       );
-
       window.addEventListener("mousemove", onDragMove);
       window.addEventListener("mouseup", onDragEnd);
     });
   }
 
-  /**
-   * Called by the main canvas ticker to update the screen position.
-   */
   update() {
+    // Position relative to the clipping container, not the whole screen
     const screenPos = this.canvas.worldContainer.toGlobal(this.worldPosition);
-    this.domElement.style.left = `${screenPos.x}px`;
-    this.domElement.style.top = `${screenPos.y}px`;
+    const containerRect = this.canvas.domContainer.getBoundingClientRect();
+
+    this.domElement.style.left = `${screenPos.x - containerRect.left}px`;
+    this.domElement.style.top = `${screenPos.y - containerRect.top}px`;
+
     this.domElement.innerText = `World X: ${Math.round(
       this.worldPosition.x
     )}, Y: ${Math.round(this.worldPosition.y)}`;
   }
 
-  /** Clean up resources. */
   destroy() {
-    document.body.removeChild(this.domElement);
+    this.canvas.domContainer.removeChild(this.domElement);
     this.canvas.worldContainer.removeChild(this.anchorMarker);
   }
 }
@@ -146,25 +133,44 @@ class PannableCanvas {
     this.worldContainer = new Container();
     this.nodes = [];
 
-    // Panning state
+    // Container for all DOM nodes
+    this.domContainer = document.createElement("div");
+
     this.isPanning = false;
     this.isSpacebarDown = false;
     this.lastPosition = new Point();
   }
 
-  /** Initializes the pixi app and sets up all event listeners. */
   async init() {
-    await this.app.init({ background: "#fff", resizeTo: window });
     // await this.app.init({ background: "#fff", resizeTo: window });
+    await this.app.init({ background: "#fff", width: 600, height: 700 });
     this.app.canvas.style.border = "2px solid #333";
     this.domTarget.appendChild(this.app.canvas);
-    this.app.stage.addChild(this.worldContainer);
 
+    this._setupDOMContainer();
+    this.domTarget.appendChild(this.domContainer);
+
+    this.app.stage.addChild(this.worldContainer);
     this._setupPanning();
     this._startTicker();
+
+    // Add a resize listener to keep the clipping container in sync
+    window.addEventListener("resize", () => this._setupDOMContainer());
   }
 
-  /** Attaches all listeners required for panning the world container. */
+  /** Sets up a container to hold all DOM nodes and clip them. */
+  _setupDOMContainer() {
+    const canvasEl = this.app.canvas;
+    this.domContainer.style.position = "absolute";
+    this.domContainer.style.left = `${canvasEl.offsetLeft}px`;
+    this.domContainer.style.top = `${canvasEl.offsetTop}px`;
+    this.domContainer.style.width = `${canvasEl.clientWidth}px`;
+    this.domContainer.style.height = `${canvasEl.clientHeight}px`;
+    this.domContainer.style.overflow = "hidden";
+    // Lets mouse events pass through to the PIXI canvas below
+    this.domContainer.style.pointerEvents = "none";
+  }
+
   _setupPanning() {
     this.app.stage.eventMode = "static";
     this.app.stage.hitArea = this.app.screen;
@@ -213,48 +219,37 @@ class PannableCanvas {
     });
   }
 
-  /** Starts the main animation loop. */
   _startTicker() {
     this.app.ticker.add(() => {
-      // On every frame, tell each node to update its position
       for (const node of this.nodes) {
         node.update();
       }
     });
   }
 
-  /** Helper to manage cursor style changes. */
   _updateCursor() {
     if (this.isPanning) this.app.canvas.style.cursor = "grabbing";
     else if (this.isSpacebarDown) this.app.canvas.style.cursor = "grab";
     else this.app.canvas.style.cursor = "default";
   }
 
-  /** Factory method to create and add a new DraggableNode. */
   createNode(x, y, text) {
     const node = new DraggableNode(x, y, text, this);
     this.nodes.push(node);
     return node;
   }
 
-  /** Adds any pixi DisplayObject to the pannable world. */
   add(pixiObject) {
     this.worldContainer.addChild(pixiObject);
   }
 }
 
-// --- Main execution ---
 (async () => {
-  // Create main canvas controller
   const canvas = new PannableCanvas(document.body);
   await canvas.init();
-
-  // Add pixi origin marker
   const circle = new Graphics().circle(0, 0, 10).fill(0x3498db);
   canvas.add(circle);
-
-  // Create and add nodes
   canvas.createNode(100, 75, "Node A");
-  canvas.createNode(-50, 150, "Node B");
+  canvas.createNode(50, 150, "Node B");
   canvas.createNode(200, 250, "Another Node");
 })();
