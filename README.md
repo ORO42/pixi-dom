@@ -15,6 +15,7 @@ Experimenting with anchoring DOM elements relative to a pannable PixiJs canvas a
 
 # Next Steps
 
+- [x] Constrain nodes within canvas bounds, so they can't be placed outside the canvas
 - [ ] Prevent nodes from resizing at edge of viewport
 - [ ] More extensive node & system behavior config options
 - [ ] Node lifecycle events
