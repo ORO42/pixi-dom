@@ -4,7 +4,8 @@ Experimenting with anchoring DOM elements relative to a pannable PixiJs canvas a
 
 # Controlls
 
-Hold Spacebar then click and drag inside the canvas area to pan.
+- Hold Spacebar then click and drag inside the canvas area to pan.
+- Click+drag a DOM node to reposition it.
 
 # Install/Run
 
@@ -20,5 +21,6 @@ Hold Spacebar then click and drag inside the canvas area to pan.
 - [ ] Node lifecycle events
 - [ ] Smarter/configurable drag trigger behavior
 - Connectors
-  - [ ] Establish logical connections between nodes
-  - [ ] Dynamically update positions of connector terminals to track nodes
+  - [ ] Establish logical relationships between nodes
+  - [ ] Draw connectors
+  - [ ] Dynamically update positions of connector terminals relative to node positions
